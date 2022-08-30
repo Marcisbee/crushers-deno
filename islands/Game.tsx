@@ -22,26 +22,26 @@ const ACTIONS: Record<Action, (player: Controller, dt: number, force: number) =>
 
     player.isGrounded = false;
 
-    player.jump(-15 * force * dt);
+    player.jump(-0.25 * force * dt);
   },
   right(player, dt, force) {
     if (player.isDead) return;
 
-    const change = 5 * force * dt;
+    const change = 0.1 * force * dt;
     player.setX(Math.min(player.x + change, 200));
   },
   left(player, dt, force) {
     if (player.isDead) return;
 
-    const change = 5 * force * dt;
+    const change = 0.1 * force * dt;
     player.setX(Math.max(player.x - change, 0));
   },
   down() {},
 };
 
-const perfectFrameTime = 1000 / 60;
+// const perfectFrameTime = 1000 / 60;
 let dt = 0;
-let lastUpdate: number | null = null;
+// let lastUpdate: number | null = null;
 
 function handleActions(player: Controller) {
   for (const action of player.actions) {
@@ -50,7 +50,7 @@ function handleActions(player: Controller) {
 }
 
 const world = {
-  gravity: 0.2, // strength per frame of gravity
+  gravity: 0.8, // strength per frame of gravity
   drag: 0.999, // play with this value to change drag
   groundDrag: 0.9, // play with this value to change ground movement
   ground: 200,
@@ -150,31 +150,24 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
     const selfId = getExomeId(controller);
 
     let running = true;
-    function tick() {
+    let secondsPassed;
+    let oldTimeStamp: number;
+    let fps;
+
+    function gameLoop(timeStamp: number) {
       if (!running) {
         return;
       }
 
-      const now = new Date().getTime();
+      // Calculate the number of seconds passed since the last frame
+      secondsPassed = (timeStamp - oldTimeStamp) / 1000;
+      oldTimeStamp = timeStamp;
 
-      if (lastUpdate === null) {
-        lastUpdate = now;
-      }
+      // Calculate fps
+      fps = Math.round(1 / secondsPassed);
+      dt = fps;
 
-      dt = (now - lastUpdate) / perfectFrameTime;
-      lastUpdate = now;
-
-      requestAnimationFrame(() => {
-        // handleActions(Object.keys(keysPressedMap));
-        // const currentState = JSON.stringify(state);
-        // const tempState = lastState;
-        // lastState = currentState;
-
-        if (!room.connections.length) {
-          tick();
-          return;
-        }
-
+      if (room.connections.length) {
         handleActions(controller);
 
         if (!controller.isGrounded) {
@@ -192,10 +185,10 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
         }
 
         for (const connection of room.connections) {
-          // if (selfId !== getExomeId(connection.controller)) {
-          //   continue;
-          // }
-          // @TODO: Why double work for self controller???
+          if (selfId === getExomeId(connection.controller)) {
+            continue;
+          }
+
           handleActions(connection.controller);
 
           if (!connection.controller.isGrounded) {
@@ -206,21 +199,19 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
 
           if (connection.controller.y >= world.ground) {
             connection.controller.isGrounded = true;
-            
+
             if (connection.controller.y !== world.ground) {
               connection.controller.setY(world.ground);
             }
           }
         }
+      }
 
-        // ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // render(ctx, keysPressedMap);
-
-        tick();
-      });
+      // The loop function has reached it's end. Keep requesting new frames
+      window.requestAnimationFrame(gameLoop);
     }
 
-    tick();
+    gameLoop(0);
 
     return () => {
       running = false;

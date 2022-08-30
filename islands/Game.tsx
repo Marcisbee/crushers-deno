@@ -424,7 +424,7 @@ export default function Game(props: GameProps) {
       {meData.controller && (
         <PlayerControls
           controller={meData.controller}
-          room={roomData}
+          room={roomData as any}
         />
       )}
       {roomData.connections.map((player) => {

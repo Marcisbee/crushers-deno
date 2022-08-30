@@ -1,19 +1,75 @@
 /** @jsx h */
 import { h } from "preact";
-import { useEffect, useState } from "preact/hooks";
-import { Exome, getExomeId, loadState, onAction } from "exome";
+import { useEffect, useLayoutEffect } from "preact/hooks";
+import { addMiddleware, getExomeId, loadState, onAction } from "exome";
+// import { exomeDevtools } from "exome/devtools";
 
-import { buildPayload, Controller, Me, room } from "../store/game.ts";
+// addMiddleware(exomeDevtools({
+//   name: 'game',
+// }));
+
+import { type Action, buildPayload, Controller, Me, room, Room } from "../store/game.ts";
 import { useStore } from "../utils/use-store.ts";
-
-// import { Button } from "../components/Button.tsx";
 
 interface GameProps {}
 
 const me = new Me();
 
-function PlayerSelfComponent({ controller }: { controller: Controller }) {
-  const {name, keys: [keyUp, keyDown, keyLeft, keyRight], x, y, actions, addAction, removeAction } = useStore(controller);
+const ACTIONS: Record<Action, (player: Controller, dt: number, force: number) => void> = {
+  up(player, dt, force) {
+    if (player.isDead) return;
+    if (!player.isGrounded) return;
+
+    player.isGrounded = false;
+
+    player.jump(-15 * force * dt);
+  },
+  right(player, dt, force) {
+    if (player.isDead) return;
+
+    const change = 5 * force * dt;
+    player.setX(Math.min(player.x + change, 200));
+  },
+  left(player, dt, force) {
+    if (player.isDead) return;
+
+    const change = 5 * force * dt;
+    player.setX(Math.max(player.x - change, 0));
+  },
+  down() {},
+};
+
+const perfectFrameTime = 1000 / 60;
+let dt = 0;
+let lastUpdate: number | null = null;
+
+function handleActions(player: Controller) {
+  for (const action of player.actions) {
+    ACTIONS[action](player, dt, 1);
+  }
+}
+
+const world = {
+  gravity: 0.2, // strength per frame of gravity
+  drag: 0.999, // play with this value to change drag
+  groundDrag: 0.9, // play with this value to change ground movement
+  ground: 200,
+};
+
+// const playerDefaults = {
+//   width: 20,
+//   height: 20,
+// };
+
+// function playersIntersect(player1: Controller, player2: Controller) {
+//   return !(player1.x > (player2.x + playerDefaults.width) ||
+//     (player1.x + playerDefaults.width) < player2.x ||
+//     player1.y > (player2.y + playerDefaults.height) ||
+//     (player1.y + playerDefaults.height) < player2.y);
+// }
+
+function PlayerControls({ controller, room }: { controller: Controller, room: Room }) {
+  const { name, x, y, dx, dy, keys: [keyUp, keyDown, keyLeft, keyRight], actions, addAction, removeAction } = useStore(controller);
 
   useEffect(() => {
     function handleKeyPress(e: KeyboardEvent) {
@@ -91,7 +147,83 @@ function PlayerSelfComponent({ controller }: { controller: Controller }) {
     window.addEventListener('keydown', handleKeyPress);
     window.addEventListener('keyup', handleKeyRelease);
 
+    const selfId = getExomeId(controller);
+
+    let running = true;
+    function tick() {
+      if (!running) {
+        return;
+      }
+
+      const now = new Date().getTime();
+
+      if (lastUpdate === null) {
+        lastUpdate = now;
+      }
+
+      dt = (now - lastUpdate) / perfectFrameTime;
+      lastUpdate = now;
+
+      requestAnimationFrame(() => {
+        // handleActions(Object.keys(keysPressedMap));
+        // const currentState = JSON.stringify(state);
+        // const tempState = lastState;
+        // lastState = currentState;
+
+        if (!room.connections.length) {
+          tick();
+          return;
+        }
+
+        handleActions(controller);
+
+        if (!controller.isGrounded) {
+          controller.dy += world.gravity;
+          controller.dy *= world.drag;
+          controller.setY(controller.y += controller.dy);
+        }
+
+        if (controller.y >= world.ground) {
+          controller.isGrounded = true;
+          // controller.y = world.ground;
+          if (controller.y !== world.ground) {
+            controller.setY(world.ground);
+          }
+        }
+
+        for (const connection of room.connections) {
+          // if (selfId !== getExomeId(connection.controller)) {
+          //   continue;
+          // }
+          // @TODO: Why double work for self controller???
+          handleActions(connection.controller);
+
+          if (!connection.controller.isGrounded) {
+            connection.controller.dy += world.gravity;
+            connection.controller.dy *= world.drag;
+            connection.controller.setY(connection.controller.y += connection.controller.dy);
+          }
+
+          if (connection.controller.y >= world.ground) {
+            connection.controller.isGrounded = true;
+            
+            if (connection.controller.y !== world.ground) {
+              connection.controller.setY(world.ground);
+            }
+          }
+        }
+
+        // ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // render(ctx, keysPressedMap);
+
+        tick();
+      });
+    }
+
+    tick();
+
     return () => {
+      running = false;
       window.removeEventListener('keydown', handleKeyPress);
       window.removeEventListener('keyup', handleKeyRelease);
     };
@@ -99,10 +231,33 @@ function PlayerSelfComponent({ controller }: { controller: Controller }) {
 
   return (
     <div>
-      <strong>ME: {name}</strong>
+      {/* <pre>{JSON.stringify({
+        jump: keyUp,
+        // keyDown,
+        left: keyLeft,
+        right: keyRight,
+      })}</pre> */}
+
+      <div
+        style={{
+          width: 20,
+          height: 20,
+          position: 'absolute',
+          backgroundColor: 'orange',
+          top: 20,
+          left: 20,
+          transform: `translate3d(${x}px, ${y}px, 0)`,
+          zIndex: 1
+        }}
+      />
+
       <pre>
         {JSON.stringify({
-          x, y, actions,
+          x,
+          y,
+          dx,
+          dy,
+          actions: actions.join(),
         }, null, 2)}
       </pre>
     </div>
@@ -110,16 +265,48 @@ function PlayerSelfComponent({ controller }: { controller: Controller }) {
 }
 
 function PlayerComponent({ controller }: { controller: Controller }) {
-  const { name, x, y, actions } = useStore(controller);
+  const { name, x, y, dx, dy, actions } = useStore(controller);
 
   return (
     <div>
-      <strong>{name}</strong>
-      <pre>
+      <div
+        style={{
+          width: 20,
+          height: 20,
+          position: 'absolute',
+          backgroundColor: 'red',
+          top: 20,
+          left: 20,
+          transform: `translate3d(${x}px, ${y}px, 0)`,
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: -20,
+            transform: 'translate3d(-50%, -50%, 0)',
+            whiteSpace: 'nowrap',
+            fontSize: '10px',
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            borderRadius: 6,
+            color: '#fff',
+            padding: '4px 8px',
+            fontFamily: 'Arial',
+          }}
+        >
+          {name}
+        </span>
+      </div>
+      {/* <pre>
         {JSON.stringify({
-          x, y, actions,
+          x,
+          y,
+          dx,
+          dy,
+          actions: actions.join(),
         }, null, 2)}
-      </pre>
+      </pre> */}
     </div>
   );
 }
@@ -129,9 +316,8 @@ export default function Game(props: GameProps) {
   const roomData = useStore(room);
   const meData = useStore(me);
 
-  useEffect(() => {
-    console.log(loadState)
-    const ws = new WebSocket('ws://localhost:8000/api/ws');
+  useLayoutEffect(() => {
+    const ws = new WebSocket('ws://192.168.1.110:8000/api/ws');
 
     ws.onclose = () => {
       console.log('izmeta no spēles');
@@ -142,12 +328,16 @@ export default function Game(props: GameProps) {
     }
 
     ws.onmessage = (e) => {
-      console.log('message', e);
-      const { type, data } = JSON.parse(e.data);
+      // console.log('message', e);
+      const { type, data, path } = JSON.parse(e.data);
 
       if (type === 'sync') {
         // setSync(data);
         console.log(loadState(room, data));
+      }
+
+      if (type === 'position') {
+        console.log(loadState(room.connections[path].controller, data));
       }
 
       if (type === 'me') {
@@ -155,21 +345,21 @@ export default function Game(props: GameProps) {
         console.log(loadState(me, data));
 
         onAction(Controller, 'addAction', (instance) => {
-          if (instance !== me.controller) {
+          if (instance !== meData.controller) {
             return;
           }
 
           ws.send(buildPayload('actions', instance));
-          // console.log('UPDATE ME addAction', instance.actions.toString());
+          console.log('UPDATE ME addAction', instance.actions.toString());
         });
 
         onAction(Controller, 'removeAction', (instance) => {
-          if (instance !== me.controller) {
+          if (instance !== meData.controller) {
             return;
           }
 
           ws.send(buildPayload('actions', instance));
-          // console.log('UPDATE ME removeAction', instance.actions.toString());
+          console.log('UPDATE ME removeAction', instance.actions.toString());
         });
       }
     }
@@ -181,23 +371,79 @@ export default function Game(props: GameProps) {
     // console.log(ws);
   }, []);
 
+  // useEffect(() => {
+  //   if (!meData.controller) {
+  //     return;
+  //   }
+
+  //   const selfId = getExomeId(meData.controller);
+
+  //   let running = true;
+  //   function tick() {
+  //     if (!running) {
+  //       return;
+  //     }
+
+  //     requestAnimationFrame(() => {
+  //       // handleActions(Object.keys(keysPressedMap));
+  //       // const currentState = JSON.stringify(state);
+  //       // const tempState = lastState;
+  //       // lastState = currentState;
+
+  //       const now = new Date().getTime();
+
+  //       if (lastUpdate === null) {
+  //         lastUpdate = now;
+  //       }
+
+  //       dt = (now - lastUpdate) / perfectFrameTime;
+  //       lastUpdate = now;
+
+  //       if (!roomData.connections.length) {
+  //         tick();
+  //         return;
+  //       }
+
+  //       // console.log(roomData.connections.map((c) => c.controller.name));
+  //       for (const connection of roomData.connections) {
+  //         // if (selfId !== getExomeId(connection.controller)) {
+  //         //   continue;
+  //         // }
+  //         handleActions(connection.controller, selfId === getExomeId(connection.controller));
+  //       }
+
+  //       // ctx.clearRect(0, 0, canvas.width, canvas.height);
+  //       // render(ctx, keysPressedMap);
+
+  //       tick();
+  //     });
+  //   }
+
+  //   tick();
+
+  //   return () => {
+  //     running = false;
+  //   };
+  // }, [meData.controller && getExomeId(meData.controller)]);
+
   return (
     <div>
-      GAME
       <h2>Hello {meData.controller?.name}</h2>
       <h2>Room:</h2>
       {meData.controller && (
-        <PlayerSelfComponent
+        <PlayerControls
           controller={meData.controller}
+          room={roomData}
         />
       )}
       {roomData.connections.map((player) => {
-        if (getExomeId(player.controller) === getExomeId(meData.controller)) {
+        if (getExomeId(player.controller) === getExomeId(meData.controller!)) {
           return null;
         }
 
         return (
           <PlayerComponent
+            key={getExomeId(player.controller)}
             controller={player.controller}
           />
         );

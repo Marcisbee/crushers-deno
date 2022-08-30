@@ -26,11 +26,14 @@ export const handler = (req: Request, ctx: HandlerContext): Response => {
   }
 
   ws.onmessage = (e) => {
-    console.log('message', e);
+    // console.log('message', e);
     const { type, data } = JSON.parse(e.data);
 
     if (type === 'actions') {
-      console.log(loadState(me.controller!, data));
+      loadState(me.controller!, data);
+      const index = room.connections.indexOf(e.target as any);
+      room.broadcast(e.target as any, buildPayload('position', me.controller!, index));
+      return;
     }
 
     room.sync();

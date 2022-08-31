@@ -369,6 +369,13 @@ function PlayerComponent({ controller }: { controller: Controller }) {
   );
 }
 
+const MAP_COLORS: Record<number, string> = {
+  2: 'silver',
+  3: 'silver',
+  4: '#603121',
+  5: '#603121',
+}
+
 function GameMap() {
   const mapData = useMemo(() => {
     const output: [number, number, number][] = [];
@@ -398,7 +405,7 @@ function GameMap() {
               width: TILE,
               height: TILE,
               position: 'absolute',
-              backgroundColor: 'silver',
+              backgroundColor: MAP_COLORS[type] || 'silver',
               zIndex: -1,
               left: x,
               top: y,

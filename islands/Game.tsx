@@ -85,11 +85,6 @@ const world = {
   ground: (MAP.th - 1) * TILE,
 };
 
-// const playerDefaults = {
-//   width: 20,
-//   height: 20,
-// };
-
 // function playersIntersect(player1: Controller, player2: Controller) {
 //   return !(player1.x > (player2.x + playerDefaults.width) ||
 //     (player1.x + playerDefaults.width) < player2.x ||
@@ -130,20 +125,20 @@ function recalculatePosition(player: Controller) {
   }
 
   // @TODO: Add dx functionality
-  // if (player.dx > 0) {
-  //   if ((cellright && !cell) ||
-  //     (celldiag && !celldown && ny)) {
-  //     player.dx = 0;              // stop horizontal velocity
-  //     player.setX(t2p(tx));       // clamp the x position to avoid moving into the platform we just hit
-  //   }
-  // }
-  // else if (player.dx < 0) {
-  //   if ((cell && !cellright) ||
-  //     (celldown && !celldiag && ny)) {
-  //     player.dx = 0;              // stop horizontal velocity
-  //     player.setX(t2p(tx + 1));   // clamp the x position to avoid moving into the platform we just hit
-  //   }
-  // }
+  if (player.actions.indexOf('right') > -1) {
+    if ((cellright && !cell) ||
+      (celldiag && !celldown && ny)) {
+      // player.dx = 0;              // stop horizontal velocity
+      player.setX(t2p(tx));       // clamp the x position to avoid moving into the platform we just hit
+    }
+  }
+  else if (player.actions.indexOf('left') > -1) {
+    if ((cell && !cellright) ||
+      (celldown && !celldiag && ny)) {
+      // player.dx = 0;              // stop horizontal velocity
+      player.setX(t2p(tx + 1));   // clamp the x position to avoid moving into the platform we just hit
+    }
+  }
 
   if (!player.isGrounded) {
     player.dy += world.gravity;
@@ -158,6 +153,10 @@ function recalculatePosition(player: Controller) {
     if (player.y !== world.ground) {
       player.setY(world.ground);
     }
+  }
+
+  if (player.isGrounded && !(celldown || (nx && celldiag))) {
+    player.isGrounded = false;
   }
 }
 
@@ -471,64 +470,7 @@ export default function Game(props: GameProps) {
     ws.onopen = (e) => {
       console.log(e);
     }
-
-    // console.log(ws);
   }, []);
-
-  // useEffect(() => {
-  //   if (!meData.controller) {
-  //     return;
-  //   }
-
-  //   const selfId = getExomeId(meData.controller);
-
-  //   let running = true;
-  //   function tick() {
-  //     if (!running) {
-  //       return;
-  //     }
-
-  //     requestAnimationFrame(() => {
-  //       // handleActions(Object.keys(keysPressedMap));
-  //       // const currentState = JSON.stringify(state);
-  //       // const tempState = lastState;
-  //       // lastState = currentState;
-
-  //       const now = new Date().getTime();
-
-  //       if (lastUpdate === null) {
-  //         lastUpdate = now;
-  //       }
-
-  //       dt = (now - lastUpdate) / perfectFrameTime;
-  //       lastUpdate = now;
-
-  //       if (!roomData.connections.length) {
-  //         tick();
-  //         return;
-  //       }
-
-  //       // console.log(roomData.connections.map((c) => c.controller.name));
-  //       for (const connection of roomData.connections) {
-  //         // if (selfId !== getExomeId(connection.controller)) {
-  //         //   continue;
-  //         // }
-  //         handleActions(connection.controller, selfId === getExomeId(connection.controller));
-  //       }
-
-  //       // ctx.clearRect(0, 0, canvas.width, canvas.height);
-  //       // render(ctx, keysPressedMap);
-
-  //       tick();
-  //     });
-  //   }
-
-  //   tick();
-
-  //   return () => {
-  //     running = false;
-  //   };
-  // }, [meData.controller && getExomeId(meData.controller)]);
 
   return (
     <div>

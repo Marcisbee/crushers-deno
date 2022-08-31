@@ -30,7 +30,7 @@ function generateName(){
 }
 
 export class Controller extends Exome {
-  public keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+  public keys = [' ', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
   // public player = new Player();
 
   public x = 60;

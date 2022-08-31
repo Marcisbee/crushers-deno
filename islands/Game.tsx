@@ -1,15 +1,46 @@
 /** @jsx h */
 import { h } from "preact";
-import { useEffect, useLayoutEffect } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo } from "preact/hooks";
 import { addMiddleware, getExomeId, loadState, onAction } from "exome";
 // import { exomeDevtools } from "exome/devtools";
 
 // addMiddleware(exomeDevtools({
 //   name: 'game',
 // }));
+import levelGhostJson from '../levels/ghost.json' assert { type: "json" };
 
 import { type Action, buildPayload, Controller, Me, room, Room } from "../store/game.ts";
 import { useStore } from "../utils/use-store.ts";
+
+const MAP = { tw: 64, th: 48 };
+const TILE = 20;
+
+let cells: number[] = [];
+
+function t2p(t: number) { return t * TILE; }
+function p2t(p: number) { return Math.floor(p / TILE); }
+function cell(x: number, y: number) { return tcell(p2t(x), p2t(y)); }
+function tcell(tx: number, ty: number) { return cells[tx + (ty * MAP.tw)]; }
+
+function setup(map: any) {
+  var data = map.layers[0].data,
+    objects = map.layers[1].objects,
+    n, obj, entity;
+
+  for (n = 0; n < objects.length; n++) {
+    obj = objects[n];
+    // entity = setupEntity(obj);
+    switch (obj.type) {
+      case "player": console.log(obj); break;
+      // case "monster": monsters.push(entity); break;
+      // case "treasure": treasure.push(entity); break;
+    }
+  }
+
+  cells = data;
+}
+setup(levelGhostJson);
+// console.log(cells);
 
 interface GameProps {}
 
@@ -28,7 +59,7 @@ const ACTIONS: Record<Action, (player: Controller, dt: number, force: number) =>
     if (player.isDead) return;
 
     const change = 0.1 * force * dt;
-    player.setX(Math.min(player.x + change, 200));
+    player.setX(Math.min(player.x + change, (MAP.tw - 1) * TILE));
   },
   left(player, dt, force) {
     if (player.isDead) return;
@@ -39,9 +70,7 @@ const ACTIONS: Record<Action, (player: Controller, dt: number, force: number) =>
   down() {},
 };
 
-// const perfectFrameTime = 1000 / 60;
 let dt = 0;
-// let lastUpdate: number | null = null;
 
 function handleActions(player: Controller) {
   for (const action of player.actions) {
@@ -53,7 +82,7 @@ const world = {
   gravity: 0.8, // strength per frame of gravity
   drag: 0.999, // play with this value to change drag
   groundDrag: 0.9, // play with this value to change ground movement
-  ground: 200,
+  ground: (MAP.th - 1) * TILE,
 };
 
 // const playerDefaults = {
@@ -68,8 +97,72 @@ const world = {
 //     (player1.y + playerDefaults.height) < player2.y);
 // }
 
+function recalculatePosition(player: Controller) {
+  var tx = p2t(player.x),
+    ty = p2t(player.y),
+    nx = player.x % TILE,
+    ny = player.y % TILE,
+    cell = tcell(tx, ty),
+    cellright = tcell(tx + 1, ty),
+    celldown = tcell(tx, ty + 1),
+    celldiag = tcell(tx + 1, ty + 1);
+
+  if (!player.isGrounded) {
+    if (player.dy > 0) {
+      if ((celldown && !cell) ||
+        (celldiag && !cellright && nx)) {
+        player.dy = 0;            // stop downward velocity
+        player.isGrounded = true; // no longer falling
+        player.setY(t2p(ty));     // clamp the y position to avoid falling into platform below
+        ny = 0;                       // - no longer overlaps the cells below
+      }
+    }
+    else if (player.dy < 0) {
+      if ((cell && !celldown) ||
+        (cellright && !celldiag && nx)) {
+        player.dy = 0;            // stop upward velocity
+        player.setY(t2p(ty + 1)); // clamp the y position to avoid jumping into platform above
+        cell = celldown;              // player is no longer really in that cell, we clamped them to the cell below 
+        cellright = celldiag;         // (ditto)
+        ny = 0;                       // player no longer overlaps the cells below
+      }
+    }
+  }
+
+  // @TODO: Add dx functionality
+  // if (player.dx > 0) {
+  //   if ((cellright && !cell) ||
+  //     (celldiag && !celldown && ny)) {
+  //     player.dx = 0;              // stop horizontal velocity
+  //     player.setX(t2p(tx));       // clamp the x position to avoid moving into the platform we just hit
+  //   }
+  // }
+  // else if (player.dx < 0) {
+  //   if ((cell && !cellright) ||
+  //     (celldown && !celldiag && ny)) {
+  //     player.dx = 0;              // stop horizontal velocity
+  //     player.setX(t2p(tx + 1));   // clamp the x position to avoid moving into the platform we just hit
+  //   }
+  // }
+
+  if (!player.isGrounded) {
+    player.dy += world.gravity;
+    player.dy *= world.drag;
+    player.dy = Math.min(TILE, player.dy);
+    player.setY(player.y += player.dy);
+  }
+
+  // Don't fall below bottom
+  if (player.y >= world.ground) {
+    player.isGrounded = true;
+    if (player.y !== world.ground) {
+      player.setY(world.ground);
+    }
+  }
+}
+
 function PlayerControls({ controller, room }: { controller: Controller, room: Room }) {
-  const { name, x, y, dx, dy, keys: [keyUp, keyDown, keyLeft, keyRight], actions, addAction, removeAction } = useStore(controller);
+  const { x, y, dx, dy, isGrounded, keys: [keyUp, keyDown, keyLeft, keyRight], actions, addAction, removeAction } = useStore(controller);
 
   useEffect(() => {
     function handleKeyPress(e: KeyboardEvent) {
@@ -169,20 +262,7 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
 
       if (room.connections.length) {
         handleActions(controller);
-
-        if (!controller.isGrounded) {
-          controller.dy += world.gravity;
-          controller.dy *= world.drag;
-          controller.setY(controller.y += controller.dy);
-        }
-
-        if (controller.y >= world.ground) {
-          controller.isGrounded = true;
-          // controller.y = world.ground;
-          if (controller.y !== world.ground) {
-            controller.setY(world.ground);
-          }
-        }
+        recalculatePosition(controller);
 
         for (const connection of room.connections) {
           if (selfId === getExomeId(connection.controller)) {
@@ -190,20 +270,7 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
           }
 
           handleActions(connection.controller);
-
-          if (!connection.controller.isGrounded) {
-            connection.controller.dy += world.gravity;
-            connection.controller.dy *= world.drag;
-            connection.controller.setY(connection.controller.y += connection.controller.dy);
-          }
-
-          if (connection.controller.y >= world.ground) {
-            connection.controller.isGrounded = true;
-
-            if (connection.controller.y !== world.ground) {
-              connection.controller.setY(world.ground);
-            }
-          }
+          recalculatePosition(connection.controller);
         }
       }
 
@@ -231,12 +298,12 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
 
       <div
         style={{
-          width: 20,
-          height: 20,
+          width: TILE,
+          height: TILE,
           position: 'absolute',
           backgroundColor: 'orange',
-          top: 20,
-          left: 20,
+          top: 0,
+          left: 0,
           transform: `translate3d(${x}px, ${y}px, 0)`,
           zIndex: 1
         }}
@@ -248,6 +315,7 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
           y,
           dx,
           dy,
+          isGrounded,
           actions: actions.join(),
         }, null, 2)}
       </pre>
@@ -262,12 +330,12 @@ function PlayerComponent({ controller }: { controller: Controller }) {
     <div>
       <div
         style={{
-          width: 20,
-          height: 20,
+          width: TILE,
+          height: TILE,
           position: 'absolute',
           backgroundColor: 'red',
-          top: 20,
-          left: 20,
+          top: 0,
+          left: 0,
           transform: `translate3d(${x}px, ${y}px, 0)`,
         }}
       >
@@ -298,6 +366,51 @@ function PlayerComponent({ controller }: { controller: Controller }) {
           actions: actions.join(),
         }, null, 2)}
       </pre> */}
+    </div>
+  );
+}
+
+function GameMap() {
+  const mapData = useMemo(() => {
+    const output: [number, number, number][] = [];
+    let x, y, cell;
+
+    for (y = 0; y < MAP.th; y++) {
+      for (x = 0; x < MAP.tw; x++) {
+        cell = tcell(x, y);
+        if (cell) {
+          output.push([cell, x * TILE, y * TILE]);
+          // ctx.fillStyle = COLORS[cell - 1];
+          // ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+        }
+      }
+    }
+
+    return output;
+  }, []);
+
+  return (
+    <div>
+      {mapData.map(([type, x, y]) => {
+        return (
+          <div
+            key={`${x}:${y}`}
+            style={{
+              width: TILE,
+              height: TILE,
+              position: 'absolute',
+              backgroundColor: 'silver',
+              zIndex: -1,
+              left: x,
+              top: y,
+              fontFamily: 'Arial',
+              fontSize: 10,
+              textAlign: 'center',
+              color: '#555',
+            }}
+          >{type}</div>
+        );
+      })}
     </div>
   );
 }
@@ -421,6 +534,7 @@ export default function Game(props: GameProps) {
     <div>
       <h2>Hello {meData.controller?.name}</h2>
       <h2>Room:</h2>
+      <GameMap />
       {meData.controller && (
         <PlayerControls
           controller={meData.controller}

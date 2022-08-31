@@ -33,8 +33,8 @@ export class Controller extends Exome {
   public keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
   // public player = new Player();
 
-  public x = 0;
-  public y = 0;
+  public x = 60;
+  public y = 400;
   public dy = 0;
   public dx = 0;
   public actions: Action[] = [];
@@ -70,6 +70,7 @@ export class Controller extends Exome {
   }
 
   public jump(dy: number) {
+    this.y -= 1;
     this.dy = dy;
   }
 

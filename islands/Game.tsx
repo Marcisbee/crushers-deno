@@ -1,7 +1,8 @@
 /** @jsx h */
 import { h } from "preact";
-import { useEffect, useLayoutEffect, useMemo } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import { addMiddleware, getExomeId, loadState, onAction } from "exome";
+import { subscribe } from "exome/subscribe";
 // import { exomeDevtools } from "exome/devtools";
 
 // addMiddleware(exomeDevtools({
@@ -161,7 +162,7 @@ function recalculatePosition(player: Controller) {
 }
 
 function PlayerControls({ controller, room }: { controller: Controller, room: Room }) {
-  const { x, y, dx, dy, isGrounded, keys: [keyUp, keyDown, keyLeft, keyRight], actions, addAction, removeAction } = useStore(controller);
+  const { x, y, keys: [keyUp, keyDown, keyLeft, keyRight], actions, addAction, removeAction } = controller;
 
   useEffect(() => {
     function handleKeyPress(e: KeyboardEvent) {
@@ -286,6 +287,18 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
     };
   }, []);
 
+  const player = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!player.current) {
+      return;
+    }
+
+    return subscribe(controller, ({ x, y }) => {
+      player.current!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    });
+  }, []);
+
   return (
     <div>
       {/* <pre>{JSON.stringify({
@@ -296,6 +309,7 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
       })}</pre> */}
 
       <div
+        ref={player}
         style={{
           width: TILE,
           height: TILE,
@@ -308,7 +322,7 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
         }}
       />
 
-      <pre>
+      {/* <pre>
         {JSON.stringify({
           x,
           y,
@@ -317,17 +331,30 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
           isGrounded,
           actions: actions.join(),
         }, null, 2)}
-      </pre>
+      </pre> */}
     </div>
   );
 }
 
 function PlayerComponent({ controller }: { controller: Controller }) {
-  const { name, x, y, dx, dy, actions } = useStore(controller);
+  const { name, x, y } = controller;
+  // const { name, x, y, dx, dy, actions } = useStore(controller);
+  const player = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!player.current) {
+      return;
+    }
+
+    return subscribe(controller, ({ x, y }) => {
+      player.current!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    });
+  }, []);
 
   return (
     <div>
       <div
+        ref={player}
         style={{
           width: TILE,
           height: TILE,

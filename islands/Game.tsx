@@ -8,39 +8,40 @@ import { subscribe } from "exome/subscribe";
 // addMiddleware(exomeDevtools({
 //   name: 'game',
 // }));
+import levelFirst from '../levels/first.ts';
 import levelGhostJson from '../levels/ghost.json' assert { type: "json" };
 
 import { type Action, buildPayload, Controller, Me, room, Room } from "../store/game.ts";
 import { useStore } from "../utils/use-store.ts";
 
-const MAP = { tw: 64, th: 48 };
+const MAP = { tw: levelFirst.width, th: levelFirst.height };
 const TILE = 20;
 
-let cells: number[] = [];
+let cells: number[] = levelFirst.data;
 
 function t2p(t: number) { return t * TILE; }
 function p2t(p: number) { return Math.floor(p / TILE); }
 function cell(x: number, y: number) { return tcell(p2t(x), p2t(y)); }
 function tcell(tx: number, ty: number) { return cells[tx + (ty * MAP.tw)]; }
 
-function setup(map: any) {
-  var data = map.layers[0].data,
-    objects = map.layers[1].objects,
-    n, obj, entity;
+// function setup(map: any) {
+//   var data = map.layers[0].data,
+//     objects = map.layers[1].objects,
+//     n, obj, entity;
 
-  for (n = 0; n < objects.length; n++) {
-    obj = objects[n];
-    // entity = setupEntity(obj);
-    switch (obj.type) {
-      case "player": console.log(obj); break;
-      // case "monster": monsters.push(entity); break;
-      // case "treasure": treasure.push(entity); break;
-    }
-  }
+//   for (n = 0; n < objects.length; n++) {
+//     obj = objects[n];
+//     // entity = setupEntity(obj);
+//     switch (obj.type) {
+//       case "player": console.log(obj); break;
+//       // case "monster": monsters.push(entity); break;
+//       // case "treasure": treasure.push(entity); break;
+//     }
+//   }
 
-  cells = data;
-}
-setup(levelGhostJson);
+//   cells = data;
+// }
+// setup(levelGhostJson);
 // console.log(cells);
 
 interface GameProps {}

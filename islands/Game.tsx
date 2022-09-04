@@ -55,24 +55,24 @@ const ACTIONS: Record<Action, (player: Controller, dt: number, force: number) =>
 
     player.isGrounded = false;
 
-    player.jump(-0.25 * force * dt);
+    player.jump(-world.MAXSPEED);
   },
   right(player, dt, force) {
     if (player.isDead) return;
 
-    const change = 0.1 * force * dt;
+    const change = 6.5 * force * dt;
     player.setX(Math.min(player.x + change, (MAP.tw - 1) * TILE));
   },
   left(player, dt, force) {
     if (player.isDead) return;
 
-    const change = 0.1 * force * dt;
+    const change = 6.5 * force * dt;
     player.setX(Math.max(player.x - change, 0));
   },
   down() {},
 };
 
-let dt = 0;
+let dt = 1;
 
 function handleActions(player: Controller) {
   for (const action of player.actions) {
@@ -81,10 +81,11 @@ function handleActions(player: Controller) {
 }
 
 const world = {
-  gravity: 0.8, // strength per frame of gravity
+  gravity: 0.9, // strength per frame of gravity
   drag: 0.999, // play with this value to change drag
   groundDrag: 0.9, // play with this value to change ground movement
   ground: (MAP.th - 1) * TILE,
+  MAXSPEED: 15,
 };
 
 // function playersIntersect(player1: Controller, player2: Controller) {
@@ -94,7 +95,34 @@ const world = {
 //     (player1.y + playerDefaults.height) < player2.y);
 // }
 
+function bound(x: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, x));
+}
+
 function recalculatePosition(player: Controller) {
+  // if (!player.isGrounded && !player.dy) {
+  //   player.dy = 1;
+  // }
+
+  // Don't fall below bottom
+  if (player.y >= world.ground) {
+    player.isGrounded = true;
+    if (player.y !== world.ground) {
+      player.setY(world.ground);
+    }
+  }
+
+  if (!player.isGrounded) {
+    player.dy = bound(player.dy + world.gravity * (dt || 1), -world.MAXSPEED, world.MAXSPEED);
+    player.setY(player.y + player.dy * (dt || 1));
+    document.getElementById('debug')!.innerHTML = JSON.stringify({
+      dt,
+      isGrounded: player.isGrounded,
+      y: player.y,
+      dy: player.dy,
+    }, null, 2);
+  }
+
   var tx = p2t(player.x),
     ty = p2t(player.y),
     nx = player.x % TILE,
@@ -142,20 +170,14 @@ function recalculatePosition(player: Controller) {
     }
   }
 
-  if (!player.isGrounded) {
-    player.dy += world.gravity;
-    player.dy *= world.drag;
-    player.dy = Math.min(TILE, player.dy);
-    player.setY(player.y += player.dy);
-  }
-
-  // Don't fall below bottom
-  if (player.y >= world.ground) {
-    player.isGrounded = true;
-    if (player.y !== world.ground) {
-      player.setY(world.ground);
-    }
-  }
+  // if (!player.isGrounded) {
+  //   // player.dy += dt;
+  //   player.dy += world.gravity;
+  //   player.dy *= world.drag;
+  //   // player.dy /= Math.min(1, dt);
+  //   // player.dy = Math.min(TILE, player.dy);
+  //   player.setY(player.y + player.dy);
+  // }
 
   if (player.isGrounded && !(celldown || (nx && celldiag))) {
     player.isGrounded = false;
@@ -255,11 +277,11 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
 
       // Calculate the number of seconds passed since the last frame
       secondsPassed = (timeStamp - oldTimeStamp) / 1000;
-      oldTimeStamp = timeStamp;
 
       // Calculate fps
       fps = Math.round(1 / secondsPassed);
-      dt = fps;
+      dt = Math.min((timeStamp - oldTimeStamp) / 20, 5);
+      oldTimeStamp = timeStamp;
 
       if (room.connections.length) {
         handleActions(controller);
@@ -277,6 +299,7 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
 
       // The loop function has reached it's end. Keep requesting new frames
       window.requestAnimationFrame(gameLoop);
+      // window.setTimeout(gameLoop, 100, 1);
     }
 
     gameLoop(0);
@@ -511,6 +534,19 @@ export default function Game(props: GameProps) {
     <div>
       <h2>Hello {meData.controller?.name}</h2>
       <h2>Room:</h2>
+      <pre
+        id="debug"
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          height: 100,
+          width: '100%',
+          fontSize: 12,
+          backgroundColor: 'silver',
+          margin: 0,
+        }}
+      />
       <GameMap />
       {meData.controller && (
         <PlayerControls
@@ -519,7 +555,11 @@ export default function Game(props: GameProps) {
         />
       )}
       {roomData.connections.map((player) => {
-        if (getExomeId(player.controller) === getExomeId(meData.controller!)) {
+        if (!player.controller) {
+          return null;
+        }
+
+        if (meData.controller && getExomeId(player.controller) === getExomeId(meData.controller)) {
           return null;
         }
 

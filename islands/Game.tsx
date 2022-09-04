@@ -88,12 +88,12 @@ const world = {
   MAXSPEED: 15,
 };
 
-// function playersIntersect(player1: Controller, player2: Controller) {
-//   return !(player1.x > (player2.x + playerDefaults.width) ||
-//     (player1.x + playerDefaults.width) < player2.x ||
-//     player1.y > (player2.y + playerDefaults.height) ||
-//     (player1.y + playerDefaults.height) < player2.y);
-// }
+function playersIntersect(player1: Controller, player2: Controller) {
+  return !(player1.x > (player2.x + TILE) ||
+    (player1.x + TILE) < player2.x ||
+    player1.y > (player2.y + TILE) ||
+    (player1.y + TILE) < player2.y);
+}
 
 function bound(x: number, min: number, max: number) {
   return Math.max(min, Math.min(max, x));
@@ -292,8 +292,16 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
             continue;
           }
 
+          if (connection.controller.isDead) {
+            continue;
+          }
+
           handleActions(connection.controller);
           recalculatePosition(connection.controller);
+          
+          if (playersIntersect(controller, connection.controller) && controller.y > connection.controller.y) {
+            controller.die();
+          }
         }
       }
 
@@ -318,8 +326,11 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
       return;
     }
 
-    return subscribe(controller, ({ x, y }) => {
+    return subscribe(controller, ({ x, y, isDead }) => {
       player.current!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      if (isDead) {
+        player.current!.style.backgroundColor = 'rgba(0,0,0,0.2)';
+      }
     });
   }, []);
 
@@ -370,8 +381,11 @@ function PlayerComponent({ controller }: { controller: Controller }) {
       return;
     }
 
-    return subscribe(controller, ({ x, y }) => {
+    return subscribe(controller, ({ x, y, isDead }) => {
       player.current!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      if (isDead) {
+        player.current!.style.backgroundColor = 'rgba(0,0,0,0.2)';
+      }
     });
   }, []);
 
@@ -521,6 +535,14 @@ export default function Game(props: GameProps) {
 
           ws.send(buildPayload('actions', instance));
           console.log('UPDATE ME removeAction', instance.actions.toString());
+        });
+
+        onAction(Controller, 'die', (instance) => {
+          if (instance !== meData.controller) {
+            return;
+          }
+
+          ws.send(buildPayload('actions', instance));
         });
       }
     }

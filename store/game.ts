@@ -33,8 +33,8 @@ export class Controller extends Exome {
   public keys = [' ', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
   // public player = new Player();
 
-  public x = 60;
-  public y = 400;
+  public x = 0;
+  public y = 0;
   public dy = 0;
   public dx = 0;
   public actions: Action[] = [];
@@ -43,9 +43,13 @@ export class Controller extends Exome {
   public score = 0;
 
   constructor(
+    public startX = 60,
+    public startY = 400,
     public name: string = generateName()
   ) {
     super();
+    this.x = this.startX;
+    this.y = this.startY;
   }
 
   public addAction(action: Action) {
@@ -78,6 +82,10 @@ export class Controller extends Exome {
     this.x = x;
     this.y = y;
   }
+
+  public die() {
+    this.isDead = true;
+  }
 }
 
 interface WebSocketGame extends WebSocket {
@@ -87,6 +95,12 @@ interface WebSocketGame extends WebSocket {
 export class Room extends Exome {
   public connections: WebSocket[] = [];
   public max = 10;
+  private startPositions = [
+    '50,50',
+    '100,50',
+    '150,50',
+    '200,50',
+  ];
 
   public join(ws: WebSocketGame) {
     if (this.connections.length > this.max) {
@@ -94,7 +108,18 @@ export class Room extends Exome {
       return;
     }
 
-    ws.controller = new Controller();
+    const all = this.connections
+      .filter(({ controller }) => !!controller)
+      .map(({ controller }) => `${controller.startX},${controller.startY}`);
+    const pos = this.startPositions.find((xy) => all.indexOf(xy) === -1);
+
+    if (!pos) {
+      console.log('NO MORE FREE SPAWNS');
+      return;
+    }
+
+    const [x, y] = pos.split(',');
+    ws.controller = new Controller(parseInt(x, 10), parseInt(y, 10));
     this.connections.push(ws);
 
     this.sync();

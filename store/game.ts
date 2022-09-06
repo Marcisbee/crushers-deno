@@ -1,7 +1,8 @@
 import { Exome, saveState, registerLoadable } from 'exome';
 
-import { Controller, Controllers } from './controllers.ts';
+// import { schema } from '../utils/schema.ts';
 
+import { Controller, Controllers } from './controllers.ts';
 
 export function buildPayload(type: 'sync' | 'join' | 'me' | 'actions' | 'position', data: any, path?: string | number) {
   if (data instanceof Exome) {
@@ -89,7 +90,7 @@ export class Room extends Exome {
       return;
     }
 
-    if (this.controllers.length + controllers.controllers.filter(Boolean).length >= this.startPositions.length) {
+    if (this.controllers.length + controllers.controllers.filter(Boolean).length > this.startPositions.length) {
       console.log('NO MORE FREE SPAWNS');
       return;
     }
@@ -116,8 +117,13 @@ export class Room extends Exome {
   }
 
   public leave(ws: WebSocket, controllers: Controllers) {
-    for (const controller of controllers.controllers) {
+    for (const controller of controllers.controllers.slice(0)) {
       const index = this.controllers.indexOf(controller!);
+
+      if (index === -1) {
+        continue;
+      }
+
       this.controllers.splice(index, 1);
     }
 
@@ -127,7 +133,7 @@ export class Room extends Exome {
     this.sync();
   }
 
-  public broadcast = (exclude: Room['connections'][0], payload: string) => {
+  public broadcast = (exclude: Room['connections'][0], payload: string | ArrayBufferLike) => {
     this.connections.forEach((ws) => {
       if (ws === exclude) {
         return;

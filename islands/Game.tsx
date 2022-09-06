@@ -8,6 +8,7 @@ import { subscribe } from 'exome/subscribe';
 
 import levelFirst from '../levels/first.ts';
 
+import { schema } from '../utils/schema.ts';
 import { type Action, buildPayload, Player, room, Room } from '../store/game.ts';
 import { useStore } from '../utils/use-store.ts';
 import { Controller, Controllers, KeyboardArrowController, KeyboardWasdController } from '../store/controllers.ts';
@@ -222,9 +223,9 @@ class RoomScene extends Scene {
             addAction('right');
             continue;
           }
-        }
 
-        console.log(e.key);
+          console.log(e.key);
+        }
       }
     }
 
@@ -262,9 +263,9 @@ class RoomScene extends Scene {
             removeAction('right');
             return;
           }
+
+          console.log(e.key);
         }
-        
-        console.log(e.key);
       }
     }
 
@@ -512,13 +513,38 @@ class Connection extends Exome {
     let subA = () => {};
     let subB = () => {};
 
-    ws.onmessage = (e) => {
-      const { type, data, path } = JSON.parse(e.data);
+    ws.onmessage = async (e) => {
+      if (e.data instanceof Blob) {
+        const arrayBuffer = new Uint8Array(await e.data.arrayBuffer());
+        const payload = schema.decodeExample(arrayBuffer);
 
-      if (type === 'position') {
-        loadState(room.controllers[path].player!, data);
+        if (payload.actions) {
+          Object.assign(
+            room.controllers[payload.index].player!,
+            payload.actions,
+          );
+          // loadState(room.controllers[payload.index].player!, payload.actions);
+          return;
+        }
+
+        // if (payload.sync) {
+        //   // Object.assign(
+        //   //   room.controllers[payload.index].player!,
+        //   //   payload.actions,
+        //   // );
+        //   // loadState(room.controllers[payload.index].player!, payload.actions);
+        //   return;
+        // }
+
         return;
       }
+
+      const { type, data, path } = JSON.parse(e.data);
+
+      // if (type === 'position') {
+      //   loadState(room.controllers[path].player!, data);
+      //   return;
+      // }
 
       if (type === 'sync') {
         const expandedData = JSON.parse(data);
@@ -552,8 +578,15 @@ class Connection extends Exome {
           //   return;
           // }
 
-          ws.send(buildPayload('actions', instance));
-          console.log('UPDATE ME addAction', instance.actions.toString());
+          const exomeId = getExomeId(instance);
+          const index = room.controllers.findIndex((c) => c.player && getExomeId(c.player) === exomeId);
+          // ws.send(buildPayload('actions', instance));
+          const payload = schema.encodeExample({
+            actions: instance,
+            index,
+          });
+          ws.send(payload);
+          // console.log('UPDATE ME addAction', instance.actions.toString());
         });
 
         subB = onAction(Player, 'removeAction', (instance) => {
@@ -561,8 +594,15 @@ class Connection extends Exome {
           //   return;
           // }
 
-          ws.send(buildPayload('actions', instance));
-          console.log('UPDATE ME removeAction', instance.actions.toString());
+          const exomeId = getExomeId(instance);
+          const index = room.controllers.findIndex((c) => c.player && getExomeId(c.player) === exomeId);
+          // ws.send(buildPayload('actions', instance));
+          const payload = schema.encodeExample({
+            actions: instance,
+            index,
+          });
+          ws.send(payload);
+          // console.log('UPDATE ME removeAction', instance.actions.toString());
         });
 
         // @TODO: implement kill conflict

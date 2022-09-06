@@ -1,8 +1,9 @@
 import { HandlerContext } from '$fresh/server.ts';
-import { getExomeId, loadState } from 'exome';
+import { loadState } from 'exome';
 
 import { Controllers } from '../../store/controllers.ts';
-import { Room, buildPayload } from '../../store/game.ts';
+import { Room } from '../../store/game.ts';
+import { schema } from '../../utils/schema.ts';
 
 const room = new Room();
 
@@ -23,6 +24,23 @@ export const handler = (req: Request, ctx: HandlerContext): Response => {
   }
 
   ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      const arrayBuffer = new Uint8Array(e.data);
+      const payload = schema.decodeExample(arrayBuffer);
+
+      if (payload.actions) {
+        room.broadcast(e.target as any, e.data);
+        Object.assign(
+          room.controllers[payload.index].player!,
+          payload.actions,
+        );
+        // loadState(room.controllers[payload.index].player!, payload.actions);
+        return;
+      }
+
+      return;
+    }
+
     const { type, data } = JSON.parse(e.data);
 
     if (type === 'join') {
@@ -30,40 +48,12 @@ export const handler = (req: Request, ctx: HandlerContext): Response => {
       room.join(ws, localControllers);
       return;
     }
-
-    // @TODO:
-    // 1. Find out why all players disconnect when one leaves
-
-    if (type === 'actions') {
-      const exomeId = JSON.parse(data).$$exome_id;
-      const index = room.controllers.findIndex((c) => c.player && getExomeId(c.player) === exomeId);
-      loadState(room.controllers[index].player!, data);
-      room.broadcast(e.target as any, buildPayload('position', room.controllers[index].player, index));
-      return;
-    }
-
   }
 
   ws.onopen = (e) => {
     if (!e.target) {
       return;
     }
-
-    // room.join(e.target as any);
-    // const player = (e.target as any).controller;
-
-    // console.log(player);
-
-    // if (!player) {
-    //   console.log('cant join, server full');
-    //   return;
-    // }
-
-    // me.update(room, player);
-    // ws.send(buildPayload('me', me));
-    // // broadcast('');
-
-    // console.log(player.name, 'joined room');
   }
 
   return response;

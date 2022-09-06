@@ -1,6 +1,7 @@
 {
   "imports": {
     "$fresh/": "https://deno.land/x/fresh@1.0.2/",
+    "kiwi-schema": "https://esm.sh/kiwi-schema@0.4.7",
     "exome": "https://esm.sh/exome@1.4.0",
     "exome/": "https://esm.sh/exome@1.4.0/",
     "preact": "https://esm.sh/preact@10.10.0",

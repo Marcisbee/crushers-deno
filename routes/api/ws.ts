@@ -1,7 +1,8 @@
 import { HandlerContext } from '$fresh/server.ts';
-import { loadState } from 'exome';
+import { getExomeId, loadState } from 'exome';
 
-import { Room, Me, buildPayload } from '../../store/game.ts';
+import { Controllers } from '../../store/controllers.ts';
+import { Room, buildPayload } from '../../store/game.ts';
 
 const room = new Room();
 
@@ -10,33 +11,37 @@ export const handler = (req: Request, ctx: HandlerContext): Response => {
     return new Response(null, { status: 501 });
   }
 
+  const localControllers = new Controllers();
   const { socket: ws, response } = Deno.upgradeWebSocket(req);
-  let broadcast: ((message: string) => void) | undefined;
-
-  const me = new Me();
 
   ws.onclose = (e) => {
     if (!e.target) {
       return;
     }
 
-    const player = room.leave(e.target as any);
-    console.log(player.name, 'left room');
-    broadcast?.(`"${player.name} left the game"`);
+    room.leave(e.target as any, localControllers);
   }
 
   ws.onmessage = (e) => {
-    // console.log('message', e);
     const { type, data } = JSON.parse(e.data);
 
-    if (type === 'actions') {
-      loadState(me.controller!, data);
-      const index = room.connections.indexOf(e.target as any);
-      room.broadcast(e.target as any, buildPayload('position', me.controller!, index));
+    if (type === 'join') {
+      loadState(localControllers, data);
+      room.join(ws, localControllers);
       return;
     }
 
-    room.sync();
+    // @TODO:
+    // 1. Find out why all players disconnect when one leaves
+
+    if (type === 'actions') {
+      const exomeId = JSON.parse(data).$$exome_id;
+      const index = room.controllers.findIndex((c) => c.player && getExomeId(c.player) === exomeId);
+      loadState(room.controllers[index].player!, data);
+      room.broadcast(e.target as any, buildPayload('position', room.controllers[index].player, index));
+      return;
+    }
+
   }
 
   ws.onopen = (e) => {
@@ -44,19 +49,21 @@ export const handler = (req: Request, ctx: HandlerContext): Response => {
       return;
     }
 
-    broadcast = room.join(e.target as any);
-    const player = (e.target as any).controller;
+    // room.join(e.target as any);
+    // const player = (e.target as any).controller;
 
-    if (!player) {
-      console.log('cant join, server full');
-      return;
-    }
+    // console.log(player);
 
-    me.update(room, player);
-    ws.send(buildPayload('me', me));
-    // broadcast('');
+    // if (!player) {
+    //   console.log('cant join, server full');
+    //   return;
+    // }
 
-    console.log(player.name, 'joined room');
+    // me.update(room, player);
+    // ws.send(buildPayload('me', me));
+    // // broadcast('');
+
+    // console.log(player.name, 'joined room');
   }
 
   return response;

@@ -1,72 +1,48 @@
+// deno-lint-ignore-file no-window-prefix
 /** @jsx h */
-import { h } from "preact";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
-import { addMiddleware, getExomeId, loadState, onAction } from "exome";
-import { subscribe } from "exome/subscribe";
-// import { exomeDevtools } from "exome/devtools";
+import { h } from 'preact';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
+import { Exome, getExomeId, loadState, onAction, addMiddleware } from 'exome';
+import { subscribe } from 'exome/subscribe';
+// import { exomeDevtools } from 'exome/devtools';
 
-// addMiddleware(exomeDevtools({
-//   name: 'game',
-// }));
 import levelFirst from '../levels/first.ts';
-import levelGhostJson from '../levels/ghost.json' assert { type: "json" };
 
-import { type Action, buildPayload, Controller, Me, room, Room } from "../store/game.ts";
-import { useStore } from "../utils/use-store.ts";
+import { type Action, buildPayload, Player, room, Room } from '../store/game.ts';
+import { useStore } from '../utils/use-store.ts';
+import { Controller, Controllers, KeyboardArrowController, KeyboardWasdController } from '../store/controllers.ts';
 
 const MAP = { tw: levelFirst.width, th: levelFirst.height };
 const TILE = 20;
 
-let cells: number[] = levelFirst.data;
+const cells: number[] = levelFirst.data;
 
 function t2p(t: number) { return t * TILE; }
 function p2t(p: number) { return Math.floor(p / TILE); }
 function cell(x: number, y: number) { return tcell(p2t(x), p2t(y)); }
 function tcell(tx: number, ty: number) { return cells[tx + (ty * MAP.tw)]; }
 
-// function setup(map: any) {
-//   var data = map.layers[0].data,
-//     objects = map.layers[1].objects,
-//     n, obj, entity;
-
-//   for (n = 0; n < objects.length; n++) {
-//     obj = objects[n];
-//     // entity = setupEntity(obj);
-//     switch (obj.type) {
-//       case "player": console.log(obj); break;
-//       // case "monster": monsters.push(entity); break;
-//       // case "treasure": treasure.push(entity); break;
-//     }
-//   }
-
-//   cells = data;
-// }
-// setup(levelGhostJson);
-// console.log(cells);
-
 interface GameProps {}
 
-const me = new Me();
-
-const ACTIONS: Record<Action, (player: Controller, dt: number, force: number) => void> = {
+const ACTIONS: Record<Action, (player: Player, dt: number, force: number) => void> = {
   up(player, dt, force) {
     if (player.isDead) return;
     if (!player.isGrounded) return;
 
     player.isGrounded = false;
 
-    player.jump(-world.MAXSPEED);
+    player.jump(-world.MAX_SPEED);
   },
   right(player, dt, force) {
     if (player.isDead) return;
 
-    const change = 6.5 * force * dt;
+    const change = 6.3 * force * dt;
     player.setX(Math.min(player.x + change, (MAP.tw - 1) * TILE));
   },
   left(player, dt, force) {
     if (player.isDead) return;
 
-    const change = 6.5 * force * dt;
+    const change = 6.3 * force * dt;
     player.setX(Math.max(player.x - change, 0));
   },
   down() {},
@@ -74,7 +50,7 @@ const ACTIONS: Record<Action, (player: Controller, dt: number, force: number) =>
 
 let dt = 1;
 
-function handleActions(player: Controller) {
+function handleActions(player: Player) {
   for (const action of player.actions) {
     ACTIONS[action](player, dt, 1);
   }
@@ -83,12 +59,12 @@ function handleActions(player: Controller) {
 const world = {
   gravity: 0.9, // strength per frame of gravity
   drag: 0.999, // play with this value to change drag
-  groundDrag: 0.9, // play with this value to change ground movement
+  // groundDrag: 0.9, // play with this value to change ground movement
   ground: (MAP.th - 1) * TILE,
-  MAXSPEED: 15,
+  MAX_SPEED: 15,
 };
 
-function playersIntersect(player1: Controller, player2: Controller) {
+function playersIntersect(player1: Player, player2: Player) {
   return !(player1.x > (player2.x + TILE) ||
     (player1.x + TILE) < player2.x ||
     player1.y > (player2.y + TILE) ||
@@ -99,11 +75,7 @@ function bound(x: number, min: number, max: number) {
   return Math.max(min, Math.min(max, x));
 }
 
-function recalculatePosition(player: Controller) {
-  // if (!player.isGrounded && !player.dy) {
-  //   player.dy = 1;
-  // }
-
+function recalculatePosition(player: Player) {
   // Don't fall below bottom
   if (player.y >= world.ground) {
     player.isGrounded = true;
@@ -112,25 +84,29 @@ function recalculatePosition(player: Controller) {
     }
   }
 
+  // Do the passive jumping/falling animation
   if (!player.isGrounded) {
-    player.dy = bound(player.dy + world.gravity * (dt || 1), -world.MAXSPEED, world.MAXSPEED);
+    player.dy = bound(player.dy + world.gravity * (dt || 1), -world.MAX_SPEED, world.MAX_SPEED);
     player.setY(player.y + player.dy * (dt || 1));
-    document.getElementById('debug')!.innerHTML = JSON.stringify({
-      dt,
-      isGrounded: player.isGrounded,
-      y: player.y,
-      dy: player.dy,
-    }, null, 2);
+
+    if (document.getElementById('debug')) {
+      document.getElementById('debug')!.innerHTML = JSON.stringify({
+        dt,
+        isGrounded: player.isGrounded,
+        y: player.y,
+        dy: player.dy,
+      }, null, 2);
+    }
   }
 
-  var tx = p2t(player.x),
-    ty = p2t(player.y),
-    nx = player.x % TILE,
-    ny = player.y % TILE,
-    cell = tcell(tx, ty),
-    cellright = tcell(tx + 1, ty),
-    celldown = tcell(tx, ty + 1),
-    celldiag = tcell(tx + 1, ty + 1);
+  const tx = p2t(player.x);
+  const ty = p2t(player.y);
+  const nx = player.x % TILE;
+  let ny = player.y % TILE;
+  let cell = tcell(tx, ty);
+  let cellright = tcell(tx + 1, ty);
+  const celldown = tcell(tx, ty + 1);
+  const celldiag = tcell(tx + 1, ty + 1);
 
   if (!player.isGrounded) {
     if (player.dy > 0) {
@@ -170,105 +146,135 @@ function recalculatePosition(player: Controller) {
     }
   }
 
-  // if (!player.isGrounded) {
-  //   // player.dy += dt;
-  //   player.dy += world.gravity;
-  //   player.dy *= world.drag;
-  //   // player.dy /= Math.min(1, dt);
-  //   // player.dy = Math.min(TILE, player.dy);
-  //   player.setY(player.y + player.dy);
-  // }
-
   if (player.isGrounded && !(celldown || (nx && celldiag))) {
     player.isGrounded = false;
   }
 }
 
-function PlayerControls({ controller, room }: { controller: Controller, room: Room }) {
-  const { x, y, keys: [keyUp, keyDown, keyLeft, keyRight], actions, addAction, removeAction } = controller;
+const localControllers = new Controllers();
 
-  useEffect(() => {
+class Scene extends Exome {}
+class WelcomeScene extends Scene { public controllers = localControllers; }
+class JoiningRoomScene extends Scene { public controllers = localControllers; }
+class RoomScene extends Scene {
+  public controllers = localControllers;
+
+  constructor() {
+    super();
+
     function handleKeyPress(e: KeyboardEvent) {
-      if (e.key === keyUp) {
-        e.preventDefault();
 
-        if (actions.indexOf('up') > -1) {
-          return;
+      for (const controller of localControllers.controllers) {
+        if (!(controller && controller.player)) {
+          continue;
         }
 
-        addAction('up');
-        return;
-      }
+        if (controller instanceof KeyboardArrowController
+          || controller instanceof KeyboardWasdController) {
+          const {
+            keybinding: [keyUp, keyDown, keyLeft, keyRight],
+            player: {
+              actions,
+              addAction,
+            },
+          } = controller;
 
-      if (e.key === keyDown) {
-        e.preventDefault();
+          if (e.key === keyUp) {
+            e.preventDefault();
 
-        if (actions.indexOf('down') > -1) {
-          return;
+            if (actions.indexOf('up') > -1) {
+              continue;
+            }
+
+            addAction('up');
+            continue;
+          }
+
+          if (e.key === keyDown) {
+            e.preventDefault();
+
+            if (actions.indexOf('down') > -1) {
+              continue;
+            }
+
+            addAction('down');
+            continue;
+          }
+
+          if (e.key === keyLeft) {
+            e.preventDefault();
+
+            if (actions.indexOf('left') > -1) {
+              continue;
+            }
+
+            addAction('left');
+            continue;
+          }
+
+          if (e.key === keyRight) {
+            e.preventDefault();
+
+            if (actions.indexOf('right') > -1) {
+              continue;
+            }
+
+            addAction('right');
+            continue;
+          }
         }
 
-        addAction('down');
-        return;
+        console.log(e.key);
       }
-
-      if (e.key === keyLeft) {
-        e.preventDefault();
-
-        if (actions.indexOf('left') > -1) {
-          return;
-        }
-
-        addAction('left');
-        return;
-      }
-
-      if (e.key === keyRight) {
-        e.preventDefault();
-
-        if (actions.indexOf('right') > -1) {
-          return;
-        }
-
-        addAction('right');
-        return;
-      }
-
-      console.log(e.key);
     }
 
     function handleKeyRelease(e: KeyboardEvent) {
-      if (e.key === keyUp) {
-        removeAction('up');
-        return;
-      }
+      for (const controller of localControllers.controllers) {
+        if (!(controller && controller.player)) {
+          continue;
+        }
 
-      if (e.key === keyDown) {
-        removeAction('down');
-        return;
-      }
+        if (controller instanceof KeyboardArrowController
+          || controller instanceof KeyboardWasdController) {
+          const {
+            keybinding: [keyUp, keyDown, keyLeft, keyRight],
+            player: {
+              removeAction,
+            },
+          } = controller;
 
-      if (e.key === keyLeft) {
-        removeAction('left');
-        return;
-      }
+          if (e.key === keyUp) {
+            removeAction('up');
+            return;
+          }
 
-      if (e.key === keyRight) {
-        removeAction('right');
-        return;
-      }
+          if (e.key === keyDown) {
+            removeAction('down');
+            return;
+          }
 
-      console.log(e.key);
+          if (e.key === keyLeft) {
+            removeAction('left');
+            return;
+          }
+
+          if (e.key === keyRight) {
+            removeAction('right');
+            return;
+          }
+        }
+        
+        console.log(e.key);
+      }
     }
 
     window.addEventListener('keydown', handleKeyPress);
     window.addEventListener('keyup', handleKeyRelease);
 
-    const selfId = getExomeId(controller);
-
     let running = true;
-    let secondsPassed;
+    // let secondsPassed;
     let oldTimeStamp: number;
-    let fps;
+    // let fps;
 
     function gameLoop(timeStamp: number) {
       if (!running) {
@@ -276,32 +282,28 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
       }
 
       // Calculate the number of seconds passed since the last frame
-      secondsPassed = (timeStamp - oldTimeStamp) / 1000;
+      // secondsPassed = (timeStamp - oldTimeStamp) / 1000;
 
       // Calculate fps
-      fps = Math.round(1 / secondsPassed);
+      // fps = Math.round(1 / secondsPassed);
       dt = Math.min((timeStamp - oldTimeStamp) / 20, 5);
       oldTimeStamp = timeStamp;
 
-      if (room.connections.length) {
-        handleActions(controller);
-        recalculatePosition(controller);
-
-        for (const connection of room.connections) {
-          if (selfId === getExomeId(connection.controller)) {
+      if (room.controllers.length) {
+        for (const controller of room.controllers) {
+          if (!controller.player) {
             continue;
           }
 
-          if (connection.controller.isDead) {
-            continue;
+          if (!controller.player.isDead) {
+            handleActions(controller.player);
           }
 
-          handleActions(connection.controller);
-          recalculatePosition(connection.controller);
+          recalculatePosition(controller.player);
           
-          if (playersIntersect(controller, connection.controller) && controller.y > connection.controller.y) {
-            controller.die();
-          }
+          // if (playersIntersect(controller, controller!.player) && controller.y > connection.controller!.y) {
+          //   controller.die();
+          // }
         }
       }
 
@@ -312,68 +314,33 @@ function PlayerControls({ controller, room }: { controller: Controller, room: Ro
 
     gameLoop(0);
 
-    return () => {
-      running = false;
-      window.removeEventListener('keydown', handleKeyPress);
-      window.removeEventListener('keyup', handleKeyRelease);
-    };
-  }, []);
-
-  const player = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!player.current) {
-      return;
-    }
-
-    return subscribe(controller, ({ x, y, isDead }) => {
-      player.current!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-      if (isDead) {
-        player.current!.style.backgroundColor = 'rgba(0,0,0,0.2)';
-      }
-    });
-  }, []);
-
-  return (
-    <div>
-      {/* <pre>{JSON.stringify({
-        jump: keyUp,
-        // keyDown,
-        left: keyLeft,
-        right: keyRight,
-      })}</pre> */}
-
-      <div
-        ref={player}
-        style={{
-          width: TILE,
-          height: TILE,
-          position: 'absolute',
-          backgroundColor: 'orange',
-          top: 0,
-          left: 0,
-          transform: `translate3d(${x}px, ${y}px, 0)`,
-          zIndex: 1
-        }}
-      />
-
-      {/* <pre>
-        {JSON.stringify({
-          x,
-          y,
-          dx,
-          dy,
-          isGrounded,
-          actions: actions.join(),
-        }, null, 2)}
-      </pre> */}
-    </div>
-  );
+    // return () => {
+    //   running = false;
+    //   window.removeEventListener('keydown', handleKeyPress);
+    //   window.removeEventListener('keyup', handleKeyRelease);
+    // };
+  // }, []);
+  }
 }
 
+class Screen extends Exome {
+  public scene: Scene = new WelcomeScene();
+
+  public joinGame() {
+    this.scene = new JoiningRoomScene();
+    connection.joinGame();
+  }
+
+  public startGame() {
+    this.scene = new RoomScene();
+  }
+}
+const screen = new Screen();
+
 function PlayerComponent({ controller }: { controller: Controller }) {
-  const { name, x, y } = controller;
-  // const { name, x, y, dx, dy, actions } = useStore(controller);
+  const { name, color } = controller;
+  const { x, y } = controller.player!;
+
   const player = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -381,13 +348,13 @@ function PlayerComponent({ controller }: { controller: Controller }) {
       return;
     }
 
-    return subscribe(controller, ({ x, y, isDead }) => {
+    return subscribe(controller.player!, ({ x, y, isDead }) => {
       player.current!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
       if (isDead) {
         player.current!.style.backgroundColor = 'rgba(0,0,0,0.2)';
       }
     });
-  }, []);
+  }, [controller.player!]);
 
   return (
     <div>
@@ -397,7 +364,7 @@ function PlayerComponent({ controller }: { controller: Controller }) {
           width: TILE,
           height: TILE,
           position: 'absolute',
-          backgroundColor: 'red',
+          backgroundColor: color,
           top: 0,
           left: 0,
           transform: `translate3d(${x}px, ${y}px, 0)`,
@@ -444,7 +411,9 @@ const MAP_COLORS: Record<number, string> = {
 function GameMap() {
   const mapData = useMemo(() => {
     const output: [number, number, number][] = [];
-    let x, y, cell;
+    let x;
+    let y;
+    let cell;
 
     for (y = 0; y < MAP.th; y++) {
       for (x = 0; x < MAP.tw; x++) {
@@ -486,75 +455,11 @@ function GameMap() {
   );
 }
 
-export default function Game(props: GameProps) {
-  // const [sync, setSync] = useState('null');
+function RoomSceneComponent({ scene }: { scene: RoomScene }) {
   const roomData = useStore(room);
-  const meData = useStore(me);
-
-  useLayoutEffect(() => {
-    const ws = new WebSocket('ws://192.168.1.110:8000/api/ws');
-
-    ws.onclose = () => {
-      console.log('izmeta no spēles');
-    }
-
-    ws.onerror = () => {
-      console.log('error');
-    }
-
-    ws.onmessage = (e) => {
-      // console.log('message', e);
-      const { type, data, path } = JSON.parse(e.data);
-
-      if (type === 'sync') {
-        // setSync(data);
-        console.log(loadState(room, data));
-      }
-
-      if (type === 'position') {
-        console.log(loadState(room.connections[path].controller, data));
-      }
-
-      if (type === 'me') {
-        // setSync(data);
-        console.log(loadState(me, data));
-
-        onAction(Controller, 'addAction', (instance) => {
-          if (instance !== meData.controller) {
-            return;
-          }
-
-          ws.send(buildPayload('actions', instance));
-          console.log('UPDATE ME addAction', instance.actions.toString());
-        });
-
-        onAction(Controller, 'removeAction', (instance) => {
-          if (instance !== meData.controller) {
-            return;
-          }
-
-          ws.send(buildPayload('actions', instance));
-          console.log('UPDATE ME removeAction', instance.actions.toString());
-        });
-
-        onAction(Controller, 'die', (instance) => {
-          if (instance !== meData.controller) {
-            return;
-          }
-
-          ws.send(buildPayload('actions', instance));
-        });
-      }
-    }
-
-    ws.onopen = (e) => {
-      console.log(e);
-    }
-  }, []);
 
   return (
     <div>
-      <h2>Hello {meData.controller?.name}</h2>
       <h2>Room:</h2>
       <pre
         id="debug"
@@ -570,29 +475,297 @@ export default function Game(props: GameProps) {
         }}
       />
       <GameMap />
-      {meData.controller && (
-        <PlayerControls
-          controller={meData.controller}
-          room={roomData as any}
-        />
-      )}
-      {roomData.connections.map((player) => {
-        if (!player.controller) {
-          return null;
-        }
-
-        if (meData.controller && getExomeId(player.controller) === getExomeId(meData.controller)) {
+      {roomData.controllers.map((controller) => {
+        if (!(controller && controller.player)) {
           return null;
         }
 
         return (
           <PlayerComponent
-            key={getExomeId(player.controller)}
-            controller={player.controller}
+            key={getExomeId(controller)}
+            controller={controller}
           />
         );
       })}
       {/* <pre>{JSON.stringify(roomData, null, 2)}</pre> */}
+    </div>
+  );
+}
+
+class Connection extends Exome {
+  public ws?: WebSocket;
+
+  constructor() {
+    super();
+
+    const ws = new WebSocket('ws://192.168.1.110:8000/api/ws');
+
+    ws.onclose = () => {
+      this.disconnect();
+    }
+
+    ws.onerror = () => {
+      this.disconnect();
+      console.log('error');
+    }
+
+    let subA = () => {};
+    let subB = () => {};
+
+    ws.onmessage = (e) => {
+      const { type, data, path } = JSON.parse(e.data);
+
+      if (type === 'position') {
+        loadState(room.controllers[path].player!, data);
+        return;
+      }
+
+      if (type === 'sync') {
+        const expandedData = JSON.parse(data);
+
+        room.controllers = expandedData.controllers.map((c1: Record<string, any>) => {
+          const existing = room.controllers.find((c2) => getExomeId(c2) === c1.$$exome_id);
+
+          if (existing) {
+            return existing;
+          }
+
+          const local = localControllers.controllers.find((c2) => c2 && getExomeId(c2) === c1.$$exome_id);
+
+          if (local) {
+            return loadState(local, JSON.stringify(c1));
+          }
+
+          return loadState(new Controller(), JSON.stringify(c1))
+        });
+
+        // @TODO: Unsubscribe from actions and game loop when screen ends
+        if (screen.scene instanceof RoomScene) {
+          return;
+        }
+
+        // loadState(room, data);
+        screen.startGame();
+
+        subA = onAction(Player, 'addAction', (instance) => {
+          // if (!localControllers.controllers.find((controller) => controller?.player === instance)) {
+          //   return;
+          // }
+
+          ws.send(buildPayload('actions', instance));
+          console.log('UPDATE ME addAction', instance.actions.toString());
+        });
+
+        subB = onAction(Player, 'removeAction', (instance) => {
+          // if (!localControllers.controllers.find((controller) => controller?.player === instance)) {
+          //   return;
+          // }
+
+          ws.send(buildPayload('actions', instance));
+          console.log('UPDATE ME removeAction', instance.actions.toString());
+        });
+
+        // @TODO: implement kill conflict
+        // onAction(Player, 'die', (instance) => {
+        //   if (instance !== meData.controller) {
+        //     return;
+        //   }
+
+        //   ws.send(buildPayload('actions', instance));
+        // });
+        return;
+      }
+    }
+
+    ws.onopen = (e) => {
+      this.connect(ws);
+    }
+  }
+
+  public joinGame() {
+    this.ws?.send(buildPayload('join', localControllers));
+  }
+
+  public connect(ws: WebSocket) {
+    this.ws = ws;
+  }
+
+  public disconnect() {
+    this.ws = undefined;
+  }
+}
+const connection = new Connection();
+
+function WelcomeSceneComponent({ scene }: { scene: WelcomeScene }) {
+  const {  } = useStore(scene);
+  const { controllers, addController, removeController } = useStore(scene.controllers);
+
+  useLayoutEffect(() => {
+    function handleKeyPress(e: KeyboardEvent) {
+      if (e.key === ' ') {
+        e.preventDefault();
+
+        // Don't allow to join party with the same controller
+        if (controllers.find((c) => c instanceof KeyboardArrowController)) {
+          return;
+        }
+
+        addController(new KeyboardArrowController());
+        return;
+      }
+
+      if (e.key === 'w') {
+        e.preventDefault();
+
+        // Don't allow to join party with the same controller
+        if (controllers.find((c) => c instanceof KeyboardWasdController)) {
+          return;
+        }
+
+        addController(new KeyboardWasdController());
+        return;
+      }
+    }
+
+    window.addEventListener('keyup', handleKeyPress);
+
+    return () => {
+      window.removeEventListener('keyup', handleKeyPress);
+    }
+  }, []);
+
+  return (
+    <div>
+      <h1>Welcome to Crushers</h1>
+      <h3>Assemble your party!</h3>
+      <ul>
+        {controllers.map((controller, index) => {
+          if (!controller) {
+            return (
+              <li style={{ opacity: 0.2 }}>
+                Player {index + 1} = ???
+              </li>
+            );
+          }
+
+          if (controller instanceof KeyboardArrowController) {
+            return (
+              <li>
+                <span style={{ backgroundColor: controller.color }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> "{controller.name}" (Space, Left, Right) <button onClick={() => removeController(controller)}>kick</button>
+              </li>
+            );
+          }
+
+          if (controller instanceof KeyboardWasdController) {
+            return (
+              <li>
+                <span style={{ backgroundColor: controller.color }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> "{controller.name}" (WAS) <button onClick={() => removeController(controller)}>kick</button>
+              </li>
+            );
+          }
+
+          return (
+            <li>
+              Player {index + 1} = ??? <button onClick={() => removeController(controller) }>kick</button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <p>Press <kbd>Space</kbd> or <kbd>W</kbd> or <kbd>X</kbd> to join</p>
+
+      <button
+        disabled={controllers.filter(Boolean).length === 0}
+        onClick={() => {
+          screen.joinGame();
+        }}
+      >
+        Join server
+      </button>
+    </div>
+  );
+}
+
+function JoiningRoomSceneComponent({ scene }: { scene: JoiningRoomScene }) {
+  const {  } = useStore(scene);
+  const { controllers, addController, removeController } = useStore(scene.controllers);
+
+  return (
+    <div>
+      <h1>Welcome to Crushers</h1>
+      <h3>Joining server...</h3>
+      <ul>
+        {controllers.map((controller, index) => {
+          if (!controller) {
+            return null;
+          }
+
+          if (controller instanceof KeyboardArrowController) {
+            return (
+              <li>
+                <span style={{ backgroundColor: controller.color }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> "{controller.name}" (Space, Left, Right)
+              </li>
+            );
+          }
+
+          if (controller instanceof KeyboardWasdController) {
+            return (
+              <li>
+                <span style={{ backgroundColor: controller.color }}>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> "{controller.name}" (WAS)
+              </li>
+            );
+          }
+
+          return (
+            <li>
+              Player {index + 1} = ???
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+export default function Main(props: GameProps) {
+  const { scene } = useStore(screen);
+  const { ws } = useStore(connection);
+
+  if (!ws) {
+    return (
+      <div>
+        Loading..
+      </div>
+    );
+  }
+
+  if (scene instanceof WelcomeScene) {
+    return (
+      <div>
+        <WelcomeSceneComponent scene={scene} />
+      </div>
+    );
+  }
+
+  if (scene instanceof JoiningRoomScene) {
+    return (
+      <div>
+        <JoiningRoomSceneComponent scene={scene} />
+      </div>
+    );
+  }
+
+  if (scene instanceof RoomScene) {
+    return (
+      <div>
+        <RoomSceneComponent scene={scene} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      Something went wrong, no scene found.
     </div>
   );
 }

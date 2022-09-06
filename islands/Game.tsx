@@ -302,8 +302,22 @@ class RoomScene extends Scene {
 
           recalculatePosition(controller.player);
           
-          // if (playersIntersect(controller, controller!.player) && controller.y > connection.controller!.y) {
-          //   controller.die();
+          for (const localController of localControllers.controllers) {
+            if (!localController) {
+              continue;
+            }
+
+            if (localController === controller) {
+              continue;
+            }
+
+            if (playersIntersect(localController.player!, controller.player) && controller.player!.y > localController.player!.y) {
+              controller.player.die();
+            }
+          }
+
+          // if (playersIntersect(localController.player!, controller!.player) && controller.y > connection.controller!.y) {
+          //   // controller.die();
           // }
         }
       }
@@ -351,6 +365,7 @@ function PlayerComponent({ controller }: { controller: Controller }) {
 
     return subscribe(controller.player!, ({ x, y, isDead }) => {
       player.current!.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+
       if (isDead) {
         player.current!.style.backgroundColor = 'rgba(0,0,0,0.2)';
       }
@@ -606,13 +621,20 @@ class Connection extends Exome {
         });
 
         // @TODO: implement kill conflict
-        // onAction(Player, 'die', (instance) => {
-        //   if (instance !== meData.controller) {
-        //     return;
-        //   }
+        // @TODO: Figure out why death only appears after moving
+        onAction(Player, 'die', (instance) => {
+          // if (instance !== meData.controller) {
+          //   return;
+          // }
 
-        //   ws.send(buildPayload('actions', instance));
-        // });
+          const exomeId = getExomeId(instance);
+          const index = room.controllers.findIndex((c) => c.player && getExomeId(c.player) === exomeId);
+          const payload = schema.encodeExample({
+            actions: instance,
+            index,
+          });
+          ws.send(payload);
+        });
         return;
       }
     }

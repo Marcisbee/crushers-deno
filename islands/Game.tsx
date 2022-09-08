@@ -1,6 +1,4 @@
 // deno-lint-ignore-file no-window-prefix
-/** @jsx h */
-import { h } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 import { Exome, getExomeId, loadState, onAction, addMiddleware } from 'exome';
 import { subscribe } from 'exome/subscribe';
@@ -514,7 +512,7 @@ class Connection extends Exome {
   constructor() {
     super();
 
-    const ws = new WebSocket('ws://192.168.1.110:8000/api/ws');
+    const ws = new WebSocket('ws://192.168.1.100:8000/api/ws');
 
     ws.onclose = () => {
       this.disconnect();

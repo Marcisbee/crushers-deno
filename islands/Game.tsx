@@ -512,7 +512,7 @@ class Connection extends Exome {
   constructor() {
     super();
 
-    const ws = new WebSocket('ws://192.168.1.100:8000/api/ws');
+    const ws = new WebSocket('ws://localhost:8000/api/ws');
 
     ws.onclose = () => {
       this.disconnect();
